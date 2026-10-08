@@ -1,0 +1,10 @@
+
+body{background:#09090b;color:white;font-family:Arial;margin:0}
+main{max-width:500px;margin:auto;padding:20px}
+h1{text-align:center}
+#chat{height:65vh;overflow:auto}
+.msg{padding:12px;border-radius:18px;background:#18181b;margin:8px 0}
+.user{background:#7c3aed}
+.input{display:flex;gap:8px}
+input{flex:1;padding:14px;border-radius:20px;border:0}
+button{border:0;border-radius:20px;padding:14px;background:#a855f7;color:white}
