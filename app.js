@@ -1,56 +1,97 @@
 
-const chat = document.getElementById("chat");
-const input = document.getElementById("text");
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({
+      error: "Méthode non autorisée."
+    });
+  }
 
-function addMessage(text, role = "") {
-  const element = document.createElement("div");
-  element.className = "msg " + role;
-  element.textContent = text;
-  chat.appendChild(element);
-  chat.scrollTop = chat.scrollHeight;
-  return element;
-}
+  const apiKey = process.env.GEMINI_API_KEY;
 
-addMessage("Salut 👋 Je suis Xeben, ton assistant IA.");
-
-async function send() {
-  const message = input.value.trim();
-  if (!message) return;
-
-  input.value = "";
-  addMessage(message, "user");
-
-  const waiting = addMessage("Xeben réfléchit…", "assistant");
+  if (!apiKey) {
+    return res.status(500).json({
+      error: "La clé GEMINI_API_KEY manque dans Vercel."
+    });
+  }
 
   try {
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message })
-    });
+    const message = String(
+      req.body?.message || ""
+    ).trim();
+
+    if (!message) {
+      return res.status(400).json({
+        error: "Écris un message pour Xeben."
+      });
+    }
+
+    if (message.length > 10000) {
+      return res.status(400).json({
+        error: "Ton message est trop long."
+      });
+    }
+
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text:
+                    "Tu es Xeben, un assistant IA utile, " +
+                    "amical et professionnel. " +
+                    "Réponds en français par défaut.\n\n" +
+                    message
+                }
+              ]
+            }
+          ]
+        })
+      }
+    );
 
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.error || "Erreur du serveur IA.");
+      console.error("Erreur Gemini :", data);
+
+      return res.status(response.status).json({
+        error:
+          data.error?.message ||
+          "Gemini n'a pas pu répondre. Réessaie plus tard."
+      });
     }
 
-    const reply = data.reply || data.output_text;
+    const reply = (
+      data.candidates?.[0]?.content?.parts || []
+    )
+      .map(part => part.text || "")
+      .join("")
+      .trim();
 
     if (!reply) {
-      throw new Error("La réponse de l’IA est vide.");
+      return res.status(502).json({
+        error: "Gemini n'a renvoyé aucune réponse."
+      });
     }
 
-    waiting.textContent = reply;
+    return res.status(200).json({
+      reply
+    });
+
   } catch (error) {
-    waiting.textContent = "Impossible de répondre : " + error.message;
+    console.error("Erreur Xeben Chat :", error);
+
+    return res.status(500).json({
+      error: "Erreur interne du serveur Chat Xeben."
+    });
   }
-
-  chat.scrollTop = chat.scrollHeight;
 }
-
-window.send = send;
-
-input.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") send();
-});
