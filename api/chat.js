@@ -1,105 +1,76 @@
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({
+      error: "Méthode non autorisée."
+    });
+  }
 
-const chat = document.getElementById("chat");
-const input = document.getElementById("text");
+  const apiKey = process.env.GEMINI_API_KEY;
 
-function addMessage(text, role = "") {
-  const element = document.createElement("div");
-  element.className = "msg " + role;
-  element.textContent = text;
-  chat.appendChild(element);
-  chat.scrollTop = chat.scrollHeight;
-  return element;
-}
-
-function addImage(base64, mimeType = "image/png") {
-  const wrapper = document.createElement("div");
-  wrapper.className = "msg assistant";
-
-  const image = document.createElement("img");
-  image.src = `data:${mimeType};base64,${base64}`;
-  image.alt = "Image générée par Xeben";
-  image.style.display = "block";
-  image.style.width = "100%";
-  image.style.maxWidth = "420px";
-  image.style.height = "auto";
-  image.style.borderRadius = "12px";
-
-  wrapper.appendChild(image);
-  chat.appendChild(wrapper);
-  chat.scrollTop = chat.scrollHeight;
-}
-
-addMessage("Salut 👋 Je suis Xeben, ton assistant IA.");
-
-async function send() {
-  const message = input.value.trim();
-  if (!message) return;
-
-  input.value = "";
-  addMessage(message, "user");
-
-  const waiting = addMessage(
-    "Xeben réfléchit…",
-    "assistant"
-  );
+  if (!apiKey) {
+    return res.status(500).json({
+      error: "La clé GEMINI_API_KEY manque dans Vercel."
+    });
+  }
 
   try {
-    const wantsImage =
-      /\b(génère|générer|crée|créer|dessine|dessiner|fabrique|imagine)\b.*\b(image|photo|illustration|dessin|logo|fond d'écran|portrait)\b/i.test(message) ||
-      /\b(image|photo|illustration)\b.*\b(génère|crée|dessine)\b/i.test(message);
+    const message = String(req.body?.message || "").trim();
 
-    const endpoint = wantsImage ? "/api/image" : "/api/chat";
+    if (!message) {
+      return res.status(400).json({
+        error: "Écris un message pour Xeben."
+      });
+    }
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(
-        wantsImage
-          ? { prompt: message }
-          : { message }
-      )
-    });
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: message }
+              ]
+            }
+          ]
+        })
+      }
+    );
 
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(
-        data.error || "Erreur du serveur."
-      );
+      console.error("Erreur Gemini :", data);
+
+      return res.status(response.status).json({
+        error: data.error?.message ||
+          "Le service Gemini a rencontré une erreur."
+      });
     }
 
-    if (wantsImage) {
-      if (!data.image) {
-        throw new Error(
-          "Le serveur n'a renvoyé aucune image."
-        );
-      }
+    const reply = data.candidates?.[0]?.content?.parts
+      ?.map(part => part.text || "")
+      .join("")
+      .trim();
 
-      waiting.remove();
-      addMessage("Voici ton image ! 🎨", "assistant");
-      addImage(data.image, data.mimeType);
-    } else {
-      const reply = data.reply || data.output_text;
-
-      if (!reply) {
-        throw new Error("La réponse de Xeben est vide.");
-      }
-
-      waiting.textContent = reply;
+    if (!reply) {
+      return res.status(502).json({
+        error: "Gemini n'a renvoyé aucune réponse."
+      });
     }
+
+    return res.status(200).json({ reply });
+
   } catch (error) {
-    waiting.textContent =
-      "Impossible de répondre : " + error.message;
+    console.error("Erreur Xeben Chat :", error);
+
+    return res.status(500).json({
+      error: "Erreur interne du serveur Chat Xeben."
+    });
   }
-
-  chat.scrollTop = chat.scrollHeight;
 }
-
-window.send = send;
-
-input.addEventListener("keydown", event => {
-  if (event.key === "Enter") send();
-});
-        
